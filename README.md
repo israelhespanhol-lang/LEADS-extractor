@@ -11,11 +11,16 @@ MVP independente para prospecção geográfica de comércios usando Google Maps 
 - Nearby Search (Places API New);
 - pins + lista de estabelecimentos;
 - busca de detalhes sob demanda (telefone público, site e avaliações);
+- investigação empresarial a partir do site oficial;
+- tentativa de localizar CNPJ publicado e consultar quadro societário;
+- identificação de sócios/administradores e canais públicos;
+- busca web avançada opcional para correlacionar responsável + contato público;
+- registro de fonte e nível de confiança do contato;
 - seleção de leads;
 - exportação CSV;
 - deduplicação por Google Place ID no navegador durante a sessão.
 
-> O projeto trabalha com dados comerciais públicos disponibilizados pelas fontes integradas. Ele não foi projetado para descobrir telefones privados de proprietários.
+> O projeto trabalha apenas com dados publicamente associados à empresa ou ao responsável. Um telefone só é rotulado como contato do responsável quando existe evidência pública relacionando pessoa, empresa e contato; caso contrário ele permanece classificado como contato comercial da empresa.
 
 ## Arquitetura
 
@@ -39,6 +44,10 @@ Crie duas chaves no Google Cloud:
    - habilite Places API (New);
    - restrinja a chave à API Places (New).
 
+3. SERPER_API_KEY (opcional)
+   - habilita a busca web avançada do módulo de enriquecimento;
+   - sem ela, o Lead Radar ainda analisa o site oficial e consulta dados empresariais quando encontra um CNPJ público.
+
 Copie `.env.example` para suas variáveis locais ou configure as mesmas variáveis na Vercel.
 
 ## Desenvolvimento
@@ -55,12 +64,17 @@ O projeto usa field masks para evitar solicitar campos desnecessários. A busca 
 
 O Nearby Search (New) retorna no máximo 20 resultados por chamada. Uma próxima etapa do Lead Radar pode dividir uma área grande em células e consolidar os resultados por Place ID para ampliar a cobertura sem duplicatas.
 
+## Enriquecimento de responsáveis
+
+Fluxo atual: Google Places → site oficial → CNPJ publicado → consulta cadastral direcionada → sócios/administradores → contatos públicos do site → busca web opcional → correlação de fonte/confiança.
+
+A consulta cadastral é feita apenas quando um CNPJ específico é encontrado; o sistema não faz varredura sequencial de CNPJs.
+
 ## Próximas etapas
 
 - persistência no Supabase;
 - histórico de pesquisas;
-- enriquecimento a partir do site oficial do estabelecimento;
-- descoberta de e-mail/Instagram comercial publicado;
+- descoberta adicional de e-mail/Instagram comercial publicado;
 - lead score;
 - listas salvas;
 - busca em grade para cobrir áreas maiores;
