@@ -296,33 +296,94 @@ export default async function handler(req, res) {
   }).slice(0, 12);
 
   const searchAvailable = Boolean(process.env.SERPER_API_KEY);
+  let searchDiagnostics = [];
+
   if (searchAvailable) {
-    const firstSearch = await serperSearch('"' + name + '" ' + address + ' CNPJ proprietário sócio fundador WhatsApp');
-    for (const result of firstSearch) {
-      const signal = searchSignals(result, owners);
-      cnpjs.push(...signal.cnpjs);
-      phones.push(...signal.phones);
-      ownerContacts.push(...signal.ownerContacts);
-      if (signal.phones[0]) evidence.push({ type: "telefone_busca_publica", source: result.link || "", value: signal.phones[0] });
+    const domain = website ? (() => {
+      try { return new URL(website).hostname.replace(/^www\./, ""); } catch { return ""; }
+    })() : "";
+
+    const discoveryQueries = [
+      '"' + name + '" "' + address + '" CNPJ',
+      '"' + name + '" CNPJ',
+      '"' + name + '" razão social CNPJ'
+    ];
+    if (domain) discoveryQueries.push('"' + domain + '" CNPJ');
+
+    for (const query of discoveryQueries) {
+      const results = await serperSearch(query);
+      searchDiagnostics.push({ query, results: results.length });
+
+      for (const result of results) {
+        const text = String(result.title || "") + " " + String(result.snippet || "");
+        const foundCnpjs = cnpjsFromText(text);
+        cnpjs.push(...foundCnpjs);
+
+        const signal = searchSignals(result, owners);
+        phones.push(...signal.phones);
+        ownerContacts.push(...signal.ownerContacts);
+
+        if (foundCnpjs[0]) {
+          evidence.push({
+            type: "cnpj_busca_publica",
+            source: result.link || "",
+            value: foundCnpjs[0]
+          });
+        }
+      }
+
+      if (uniq(cnpjs).length) break;
     }
 
-    if (!registry && uniq(cnpjs)[0]) {
-      registry = await brasilApi(uniq(cnpjs)[0]);
+    cnpjs = uniq(cnpjs);
+
+    if (!registry && cnpjs[0]) {
+      registry = await brasilApi(cnpjs[0]);
       if (registry) {
         owners = [...registry.owners, ...owners];
         phones = uniq([...phones, ...registry.phones]);
         emails = uniq([...emails, registry.email]);
+        if (registry.owners.length) {
+          evidence.push({
+            type: "quadro_societario",
+            source: "BrasilAPI / Receita Federal",
+            value: registry.owners.slice(0, 3).map((o) => o.name).join(", ")
+          });
+        }
       }
     }
 
-    for (const owner of owners.slice(0, 2)) {
-      const ownerSearch = await serperSearch('"' + owner.name + '" "' + name + '" WhatsApp telefone contato');
-      for (const result of ownerSearch) {
-        const signal = searchSignals(result, [owner]);
-        ownerContacts.push(...signal.ownerContacts);
-        if (signal.ownerContacts[0]) {
-          evidence.push({ type: "contato_publico_responsavel", source: result.link || "", value: owner.name + ": " + signal.ownerContacts[0].phone });
+    const ownerKeysAfterRegistry = new Set();
+    owners = owners.filter((owner) => {
+      const key = String(owner.name || "").toLocaleLowerCase("pt-BR");
+      if (!key || ownerKeysAfterRegistry.has(key)) return false;
+      ownerKeysAfterRegistry.add(key);
+      return true;
+    }).slice(0, 12);
+
+    for (const owner of owners.slice(0, 3)) {
+      const ownerQueries = [
+        '"' + owner.name + '" "' + name + '" WhatsApp telefone contato',
+        '"' + owner.name + '" "' + name + '" proprietário',
+        '"' + owner.name + '" "' + name + '" Instagram'
+      ];
+
+      for (const query of ownerQueries) {
+        const results = await serperSearch(query);
+        searchDiagnostics.push({ query, results: results.length });
+
+        for (const result of results) {
+          const signal = searchSignals(result, [owner]);
+          ownerContacts.push(...signal.ownerContacts);
+          if (signal.ownerContacts[0]) {
+            evidence.push({
+              type: "contato_publico_responsavel",
+              source: result.link || "",
+              value: owner.name + ": " + signal.ownerContacts[0].phone
+            });
+          }
         }
+        if (ownerContacts.some((item) => item.name === owner.name)) break;
       }
     }
   }
@@ -353,6 +414,15 @@ export default async function handler(req, res) {
     },
     evidence: evidence.filter((item) => item.value).slice(0, 16),
     pagesChecked: pages.map((page) => page.url),
-    searchAvailable
+    searchAvailable,
+    diagnostics: {
+      reason: registry
+        ? "cnpj_encontrado"
+        : (searchAvailable
+            ? (uniq(cnpjs).length ? "cnpj_candidato_sem_validacao" : "nenhum_cnpj_nas_fontes_consultadas")
+            : "busca_web_avancada_nao_configurada"),
+      pagesChecked: pages.length,
+      searchQueries: searchDiagnostics
+    }
   });
 }
