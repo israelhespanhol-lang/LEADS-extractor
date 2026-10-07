@@ -12,6 +12,7 @@
     statusBar: document.getElementById("statusBar"),
     selectAllBtn: document.getElementById("selectAllBtn"),
     extractContactsBtn: document.getElementById("extractContactsBtn"),
+    enrichOwnersBtn: document.getElementById("enrichOwnersBtn"),
     exportBtn: document.getElementById("exportBtn"),
     leadTemplate: document.getElementById("leadTemplate")
   };
@@ -24,6 +25,7 @@
     markers: [],
     places: [],
     details: new Map(),
+    enrichment: new Map(),
     selected: new Set(),
     mapsReady: false
   };
@@ -229,6 +231,7 @@
     els.resultsList.innerHTML = "";
     els.selectAllBtn.disabled = state.places.length === 0;
     els.extractContactsBtn.disabled = state.places.length === 0;
+    els.enrichOwnersBtn.disabled = state.places.length === 0;
     els.exportBtn.disabled = state.selected.size === 0;
 
     if (!state.places.length) {
@@ -261,11 +264,16 @@
       const detailsBtn = frag.querySelector(".details-btn");
       detailsBtn.addEventListener("click", () => loadDetails(place.id, card, detailsBtn));
 
+      const enrichBtn = frag.querySelector(".enrich-btn");
+      enrichBtn.addEventListener("click", () => enrichPlace(place, card, enrichBtn));
+
       const mapsLink = frag.querySelector(".maps-link");
       mapsLink.href = `https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${encodeURIComponent(place.id)}`;
 
       const cached = state.details.get(place.id);
       if (cached) renderDetails(card, cached);
+      const enriched = state.enrichment.get(place.id);
+      if (enriched) renderEnrichment(card, enriched);
       els.resultsList.appendChild(frag);
     });
   }
@@ -273,6 +281,7 @@
   function updateSelectionControls() {
     els.exportBtn.disabled = state.selected.size === 0;
     els.extractContactsBtn.disabled = state.places.length === 0;
+    els.enrichOwnersBtn.disabled = state.places.length === 0;
     els.selectAllBtn.textContent = state.selected.size === state.places.length && state.places.length
       ? "Desmarcar todos"
       : "Selecionar todos";
@@ -353,6 +362,170 @@
     setStatus(`Extração concluída: ${phones} telefone(s) encontrado(s) em ${pending.length} estabelecimento(s)${failures ? `, com ${failures} falha(s)` : ""}. Alguns negócios podem não publicar telefone no Google.`);
   }
 
+  async function ensureDetails(place) {
+    if (state.details.has(place.id)) return state.details.get(place.id);
+    const res = await fetch("/api/details?id=" + encodeURIComponent(place.id));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao carregar os detalhes do Google.");
+    state.details.set(place.id, data);
+    const card = document.querySelector('[data-place-id="' + CSS.escape(place.id) + '"]');
+    if (card) {
+      renderDetails(card, data);
+      const detailsBtn = card.querySelector(".details-btn");
+      if (detailsBtn) detailsBtn.textContent = "Contato carregado";
+    }
+    return data;
+  }
+
+  async function enrichPlace(place, card, button) {
+    if (state.enrichment.has(place.id)) {
+      renderEnrichment(card, state.enrichment.get(place.id));
+      return state.enrichment.get(place.id);
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Investigando…";
+    }
+
+    try {
+      const details = await ensureDetails(place);
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: place.displayName?.text || "",
+          address: place.formattedAddress || "",
+          website: details.websiteUri || ""
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha no enriquecimento empresarial.");
+      state.enrichment.set(place.id, data);
+      if (card) renderEnrichment(card, data);
+      if (button) button.textContent = "Responsável investigado";
+      return data;
+    } catch (error) {
+      if (button) button.textContent = "Tentar novamente";
+      throw error;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function enrichAllOwners() {
+    if (!state.places.length) return;
+    const pending = state.places.filter((place) => !state.enrichment.has(place.id));
+    if (!pending.length) {
+      setStatus("Os estabelecimentos desta busca já foram investigados.");
+      return;
+    }
+
+    els.enrichOwnersBtn.disabled = true;
+    els.enrichOwnersBtn.textContent = "Investigando…";
+
+    let completed = 0;
+    let ownersFound = 0;
+    let directContacts = 0;
+    let failures = 0;
+    const queue = [...pending];
+
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      while (queue.length) {
+        const place = queue.shift();
+        if (!place) break;
+        const card = document.querySelector('[data-place-id="' + CSS.escape(place.id) + '"]');
+        const button = card?.querySelector(".enrich-btn") || null;
+        try {
+          const data = await enrichPlace(place, card, button);
+          if (data?.owners?.length) ownersFound += 1;
+          if (data?.ownerContacts?.length) directContacts += 1;
+        } catch {
+          failures += 1;
+        } finally {
+          completed += 1;
+          setStatus(
+            "Investigando responsáveis: " + completed + "/" + pending.length +
+            " · " + ownersFound + " com responsável identificado" +
+            " · " + directContacts + " com contato público associado" +
+            (failures ? " · " + failures + " falha(s)" : "")
+          );
+        }
+      }
+    });
+
+    await Promise.all(workers);
+    els.enrichOwnersBtn.disabled = false;
+    els.enrichOwnersBtn.textContent = "Enriquecer responsáveis";
+    setStatus(
+      "Investigação concluída: " + ownersFound + " empresa(s) com responsável identificado e " +
+      directContacts + " com contato público associado ao responsável." +
+      (failures ? " " + failures + " consulta(s) falharam." : "")
+    );
+  }
+
+  function formatCnpj(value) {
+    const d = String(value || "").replace(/\D/g, "");
+    if (d.length !== 14) return value || "";
+    return d.slice(0,2) + "." + d.slice(2,5) + "." + d.slice(5,8) + "/" + d.slice(8,12) + "-" + d.slice(12);
+  }
+
+  function safeSourceLink(source) {
+    if (!/^https?:\/\//i.test(source || "")) return escapeHtml(source || "");
+    const safe = escapeHtml(source);
+    return '<a href="' + safe + '" target="_blank" rel="noopener">fonte pública</a>';
+  }
+
+  function renderEnrichment(card, data) {
+    const box = card.querySelector(".lead-enrichment");
+    if (!box) return;
+
+    const owners = (data.owners || []).slice(0, 4);
+    const direct = (data.ownerContacts || []).slice(0, 4);
+    const publicPhones = data.publicContacts?.phones || [];
+    const whats = data.publicContacts?.whatsapps || [];
+    const emails = data.publicContacts?.emails || [];
+    const instagram = data.socials?.instagram || [];
+
+    let html = '<div><strong>Investigação empresarial</strong></div>';
+    html += '<div><strong>CNPJ:</strong> ' + (data.cnpj ? escapeHtml(formatCnpj(data.cnpj)) : "não localizado") + '</div>';
+
+    if (data.company?.razaoSocial) {
+      html += '<div><strong>Razão social:</strong> ' + escapeHtml(data.company.razaoSocial) + '</div>';
+    }
+
+    if (owners.length) {
+      html += '<div><strong>Responsável/sócio:</strong> ' + owners.map((o) =>
+        escapeHtml(o.name) + (o.role ? " (" + escapeHtml(o.role) + ")" : "")
+      ).join("; ") + '</div>';
+    } else {
+      html += '<div><strong>Responsável/sócio:</strong> não identificado com segurança</div>';
+    }
+
+    if (direct.length) {
+      html += '<div><strong>Contato público do responsável:</strong><br>' + direct.map((item) =>
+        escapeHtml(item.phone) +
+        (item.name ? " · " + escapeHtml(item.name) : "") +
+        " · confiança " + escapeHtml(item.confidence || "media") +
+        (item.source ? " · " + safeSourceLink(item.source) : "")
+      ).join("<br>") + '</div>';
+    } else {
+      html += '<div><strong>Contato do responsável:</strong> nenhum número publicamente associado com segurança</div>';
+    }
+
+    if (whats.length) html += '<div><strong>WhatsApp público:</strong> ' + whats.map(escapeHtml).join(", ") + '</div>';
+    if (publicPhones.length) html += '<div><strong>Telefones públicos encontrados:</strong> ' + publicPhones.slice(0,4).map(escapeHtml).join(", ") + '</div>';
+    if (emails.length) html += '<div><strong>E-mails públicos:</strong> ' + emails.slice(0,3).map(escapeHtml).join(", ") + '</div>';
+    if (instagram.length) html += '<div><strong>Instagram:</strong> ' + instagram.slice(0,2).map((url) => safeSourceLink(url)).join(", ") + '</div>';
+
+    if (!data.searchAvailable) {
+      html += '<div class="enrich-note">Busca web avançada ainda não configurada. Com SERPER_API_KEY, o sistema também pesquisa fontes públicas fora do site oficial.</div>';
+    }
+
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -384,9 +557,11 @@
     const chosen = state.places.filter((p) => state.selected.has(p.id));
     if (!chosen.length) return;
 
-    const headers = ["nome","categoria","endereco","telefone","site","avaliacao","total_avaliacoes","place_id","latitude","longitude"];
+    const headers = ["nome","categoria","endereco","telefone_google","site","avaliacao","total_avaliacoes","cnpj","razao_social","responsaveis","contato_publico_responsavel","confianca_contato_responsavel","whatsapp_publico","emails_publicos","instagram","fonte_contato_responsavel","place_id","latitude","longitude"];
     const rows = chosen.map((place) => {
       const d = state.details.get(place.id) || {};
+      const e = state.enrichment.get(place.id) || {};
+      const ownerContact = e.ownerContacts?.[0] || {};
       return [
         place.displayName?.text || "",
         primaryTypeLabel(place),
@@ -395,6 +570,15 @@
         d.websiteUri || "",
         d.rating || "",
         d.userRatingCount || "",
+        e.cnpj || "",
+        e.company?.razaoSocial || "",
+        (e.owners || []).map((o) => o.name + (o.role ? " (" + o.role + ")" : "")).join(" | "),
+        ownerContact.phone || "",
+        ownerContact.confidence || "",
+        (e.publicContacts?.whatsapps || []).join(" | "),
+        (e.publicContacts?.emails || []).join(" | "),
+        (e.socials?.instagram || []).join(" | "),
+        ownerContact.source || "",
         place.id,
         place.location?.latitude ?? place.location?.lat ?? "",
         place.location?.longitude ?? place.location?.lng ?? ""
@@ -429,6 +613,7 @@
     updateSelectionControls();
   });
   els.extractContactsBtn.addEventListener("click", extractAllContacts);
+  els.enrichOwnersBtn.addEventListener("click", enrichAllOwners);
   els.exportBtn.addEventListener("click", exportCsv);
 
   loadMaps();
