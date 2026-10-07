@@ -11,6 +11,7 @@
     resultsList: document.getElementById("resultsList"),
     statusBar: document.getElementById("statusBar"),
     selectAllBtn: document.getElementById("selectAllBtn"),
+    extractContactsBtn: document.getElementById("extractContactsBtn"),
     exportBtn: document.getElementById("exportBtn"),
     leadTemplate: document.getElementById("leadTemplate")
   };
@@ -227,6 +228,7 @@
     els.resultCount.textContent = String(state.places.length);
     els.resultsList.innerHTML = "";
     els.selectAllBtn.disabled = state.places.length === 0;
+    els.extractContactsBtn.disabled = state.places.length === 0;
     els.exportBtn.disabled = state.selected.size === 0;
 
     if (!state.places.length) {
@@ -270,6 +272,7 @@
 
   function updateSelectionControls() {
     els.exportBtn.disabled = state.selected.size === 0;
+    els.extractContactsBtn.disabled = state.places.length === 0;
     els.selectAllBtn.textContent = state.selected.size === state.places.length && state.places.length
       ? "Desmarcar todos"
       : "Selecionar todos";
@@ -299,6 +302,55 @@
     } finally {
       button.disabled = false;
     }
+  }
+
+  async function extractAllContacts() {
+    if (!state.places.length) return;
+
+    const pending = state.places.filter((place) => !state.details.has(place.id));
+    if (!pending.length) {
+      setStatus("Os contatos disponíveis desta busca já foram carregados.");
+      return;
+    }
+
+    els.extractContactsBtn.disabled = true;
+    els.extractContactsBtn.textContent = "Extraindo…";
+
+    let completed = 0;
+    let phones = 0;
+    let failures = 0;
+
+    const queue = [...pending];
+    const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+      while (queue.length) {
+        const place = queue.shift();
+        if (!place) break;
+        try {
+          const res = await fetch(`/api/details?id=${encodeURIComponent(place.id)}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Falha ao carregar detalhes.");
+          state.details.set(place.id, data);
+          if (data.internationalPhoneNumber || data.nationalPhoneNumber) phones += 1;
+          const card = document.querySelector(`[data-place-id="${CSS.escape(place.id)}"]`);
+          if (card) {
+            renderDetails(card, data);
+            const btn = card.querySelector(".details-btn");
+            if (btn) btn.textContent = "Contato carregado";
+          }
+        } catch {
+          failures += 1;
+        } finally {
+          completed += 1;
+          setStatus(`Extraindo contatos: ${completed}/${pending.length} · ${phones} telefone(s) encontrado(s)${failures ? ` · ${failures} falha(s)` : ""}.`);
+        }
+      }
+    });
+
+    await Promise.all(workers);
+
+    els.extractContactsBtn.disabled = false;
+    els.extractContactsBtn.textContent = "Extrair contatos";
+    setStatus(`Extração concluída: ${phones} telefone(s) encontrado(s) em ${pending.length} estabelecimento(s)${failures ? `, com ${failures} falha(s)` : ""}. Alguns negócios podem não publicar telefone no Google.`);
   }
 
   function escapeHtml(value) {
@@ -376,6 +428,7 @@
     renderResults();
     updateSelectionControls();
   });
+  els.extractContactsBtn.addEventListener("click", extractAllContacts);
   els.exportBtn.addEventListener("click", exportCsv);
 
   loadMaps();
