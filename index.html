@@ -72,7 +72,7 @@
 
       <button id="searchBtn" class="primary-btn" type="button" disabled>Buscar comércios</button>
       <p id="configNotice" class="notice" hidden></p>
-      <p class="helper">A busca inicial retorna até 20 locais por chamada. Telefone e site são carregados somente quando você pedir detalhes.</p>
+      <p class="helper">A busca inicial encontra os comércios. Depois você pode carregar o contato do Google e investigar CNPJ, sócios/administradores e canais públicos associados ao negócio ou responsável.</p>
     </section>
 
     <section class="map-panel card" aria-label="Mapa de prospecção">
@@ -94,6 +94,7 @@
         <div class="results-actions">
           <button id="selectAllBtn" class="ghost-btn" type="button" disabled>Selecionar todos</button>
           <button id="extractContactsBtn" class="secondary-btn" type="button" disabled>Extrair contatos</button>
+          <button id="enrichOwnersBtn" class="secondary-btn" type="button" disabled>Enriquecer responsáveis</button>
           <button id="exportBtn" class="secondary-btn" type="button" disabled>Exportar CSV</button>
         </div>
       </div>
@@ -125,8 +126,10 @@
         </div>
         <p class="lead-address"></p>
         <div class="lead-details" hidden></div>
+        <div class="lead-enrichment" hidden></div>
         <div class="lead-actions">
-          <button class="details-btn secondary-btn" type="button">Buscar contato</button>
+          <button class="details-btn secondary-btn" type="button">Contato do Google</button>
+          <button class="enrich-btn ghost-btn" type="button">Investigar responsável</button>
           <a class="maps-link ghost-btn" target="_blank" rel="noopener">Abrir no Maps</a>
         </div>
       </div>
