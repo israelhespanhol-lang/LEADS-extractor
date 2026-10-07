@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Lead Radar — prospecção geográfica de comércios com Google Maps.">
+  <title>Lead Radar</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">LR</span>
+      <div>
+        <strong>Lead Radar</strong>
+        <small>Prospecção geográfica</small>
+      </div>
+    </div>
+    <span class="pill">MVP independente</span>
+  </header>
+
+  <main class="app-shell">
+    <section class="controls card" aria-label="Filtros de busca">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">BUSCA</span>
+          <h1>Encontre comércios por região</h1>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Endereço, bairro ou cidade</span>
+        <div class="input-action">
+          <input id="locationInput" type="text" value="Palhoça, SC" placeholder="Ex.: Centro, Palhoça - SC">
+          <button id="geocodeBtn" class="secondary-btn" type="button">Localizar</button>
+        </div>
+      </label>
+
+      <div class="two-col">
+        <label class="field">
+          <span>Raio</span>
+          <select id="radiusSelect">
+            <option value="1000">1 km</option>
+            <option value="3000" selected>3 km</option>
+            <option value="5000">5 km</option>
+            <option value="10000">10 km</option>
+            <option value="20000">20 km</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Categoria</span>
+          <select id="categorySelect">
+            <option value="restaurant">Restaurantes</option>
+            <option value="gym">Academias</option>
+            <option value="beauty_salon">Salões de beleza</option>
+            <option value="real_estate_agency">Imobiliárias</option>
+            <option value="medical_clinic">Clínicas</option>
+            <option value="pet_store">Pet shops</option>
+            <option value="hotel">Hotéis</option>
+            <option value="store">Lojas</option>
+            <option value="travel_agency">Agências de viagem</option>
+            <option value="car_repair">Oficinas</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="center-info">
+        <span>Centro da busca</span>
+        <strong id="centerLabel">Defina pelo endereço ou clique no mapa</strong>
+      </div>
+
+      <button id="searchBtn" class="primary-btn" type="button" disabled>Buscar comércios</button>
+      <p id="configNotice" class="notice" hidden></p>
+      <p class="helper">A busca inicial retorna até 20 locais por chamada. Telefone e site são carregados somente quando você pedir detalhes.</p>
+    </section>
+
+    <section class="map-panel card" aria-label="Mapa de prospecção">
+      <div id="map" class="map">
+        <div class="map-placeholder">
+          <strong>Carregando mapa…</strong>
+          <span>Configure as chaves do Google Maps se esta mensagem permanecer.</span>
+        </div>
+      </div>
+      <div class="map-hint">Clique em qualquer ponto do mapa para mover o centro do raio.</div>
+    </section>
+
+    <section class="results-panel card" aria-label="Resultados">
+      <div class="results-head">
+        <div>
+          <span class="eyebrow">RESULTADOS</span>
+          <h2><span id="resultCount">0</span> estabelecimentos</h2>
+        </div>
+        <div class="results-actions">
+          <button id="selectAllBtn" class="ghost-btn" type="button" disabled>Selecionar todos</button>
+          <button id="exportBtn" class="secondary-btn" type="button" disabled>Exportar CSV</button>
+        </div>
+      </div>
+
+      <div id="statusBar" class="status-bar" aria-live="polite">Pronto para iniciar.</div>
+      <div id="resultsList" class="results-list">
+        <div class="empty-state">
+          <div class="empty-icon">◎</div>
+          <strong>Nenhuma busca realizada</strong>
+          <span>Escolha uma região, categoria e raio para começar.</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <template id="leadTemplate">
+    <article class="lead-card">
+      <label class="lead-check">
+        <input type="checkbox" class="lead-selector">
+        <span class="sr-only">Selecionar lead</span>
+      </label>
+      <div class="lead-main">
+        <div class="lead-title-row">
+          <div>
+            <h3 class="lead-name"></h3>
+            <p class="lead-type"></p>
+          </div>
+          <span class="lead-badge">Público</span>
+        </div>
+        <p class="lead-address"></p>
+        <div class="lead-details" hidden></div>
+        <div class="lead-actions">
+          <button class="details-btn secondary-btn" type="button">Buscar contato</button>
+          <a class="maps-link ghost-btn" target="_blank" rel="noopener">Abrir no Maps</a>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
