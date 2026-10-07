@@ -519,7 +519,13 @@
     if (instagram.length) html += '<div><strong>Instagram:</strong> ' + instagram.slice(0,2).map((url) => safeSourceLink(url)).join(", ") + '</div>';
 
     if (!data.searchAvailable) {
-      html += '<div class="enrich-note">Busca web avançada ainda não configurada. Com SERPER_API_KEY, o sistema também pesquisa fontes públicas fora do site oficial.</div>';
+      html += '<div class="enrich-note"><strong>Diagnóstico:</strong> busca web avançada não configurada. Sem SERPER_API_KEY, o sistema fica limitado ao site oficial; por isso muitos CNPJs não aparecem.</div>';
+    } else if (data.diagnostics?.reason === "nenhum_cnpj_nas_fontes_consultadas") {
+      html += '<div class="enrich-note"><strong>Diagnóstico:</strong> a busca web foi executada, mas nenhum CNPJ confiável apareceu nas fontes consultadas.</div>';
+    } else if (data.diagnostics?.reason === "cnpj_candidato_sem_validacao") {
+      html += '<div class="enrich-note"><strong>Diagnóstico:</strong> apareceu um CNPJ candidato, mas ele não pôde ser validado na consulta cadastral.</div>';
+    } else if (data.diagnostics?.reason === "cnpj_encontrado") {
+      html += '<div class="enrich-note"><strong>Diagnóstico:</strong> CNPJ localizado e validado; quadro societário consultado.</div>';
     }
 
     box.innerHTML = html;
