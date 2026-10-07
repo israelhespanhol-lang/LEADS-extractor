@@ -142,14 +142,22 @@
     state.markers = [];
   }
 
+  function toLatLng(location) {
+    if (!location) return null;
+    const lat = Number(location.lat ?? location.latitude);
+    const lng = Number(location.lng ?? location.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
+
   function addMarkers() {
     clearMarkers();
     const bounds = new google.maps.LatLngBounds();
     state.places.forEach((place, index) => {
-      if (!place.location) return;
+      const position = toLatLng(place.location);
+      if (!position) return;
       const marker = new google.maps.Marker({
         map: state.map,
-        position: place.location,
+        position,
         title: place.displayName?.text || "Estabelecimento",
         label: String(index + 1)
       });
@@ -160,7 +168,7 @@
         window.setTimeout(() => card?.classList.remove("flash"), 850);
       });
       state.markers.push(marker);
-      bounds.extend(place.location);
+      bounds.extend(position);
     });
     if (!bounds.isEmpty()) state.map.fitBounds(bounds, 72);
   }
